@@ -60,9 +60,9 @@ node dist/cli.js [options]
 qiu --model qwen2.5:7b
 ```
 
-**Using Ollama with a different model**:
+**Using Qwen3.6-35B-A3B-4bit**:
 ```bash
-qiu --model llama3.1 --base-url http://localhost:11434
+npm run dev -- --model Qwen3.6-35B-A3B-4bit -u http://127.0.0.1:8099
 ```
 
 **Using OpenAI**:
