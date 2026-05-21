@@ -1,0 +1,28 @@
+{
+	"name": "qiu",
+	"version": "0.1.0",
+	"description": "Minimal agent framework for local LLMs",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"qiu": "./dist/cli.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsx src/cli.ts",
+		"clean": "rm -rf dist"
+	},
+	"dependencies": {
+		"partial-json": "0.1.7"
+	},
+	"devDependencies": {
+		"@types/node": "22.15.17",
+		"tsx": "4.19.4",
+		"typescript": "5.8.3"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"license": "MIT"
+}
