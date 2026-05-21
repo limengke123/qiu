@@ -1,6 +1,6 @@
 # qiu
 
-Minimal agent framework for local LLMs.
+[中文文档](README_CN.md) | Minimal agent framework for local LLMs.
 
 ## Features
 
