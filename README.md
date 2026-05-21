@@ -2,48 +2,67 @@
 
 [中文文档](README_CN.md) | Minimal agent framework for local LLMs.
 
-## Features
+<div align="center">
 
-- Interactive REPL with streaming output
-- Support for local models (via Ollama) and remote APIs (OpenAI, etc.)
-- Built-in tools: read files, write files, execute shell commands
-- Event-based architecture with comprehensive type definitions
+**qiu** - A minimal AI Agent framework for local large language models with tool calling capabilities.
 
-## Getting Started
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.0%2B-green.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+</div>
+
+## ✨ Features
+
+- **Interactive REPL** with streaming output and real-time feedback
+- **Multi-Provider Support** - Local models (Ollama) and remote APIs (OpenAI, etc.)
+- **Built-in Tools** - Read files, write files, execute shell commands
+- **Event-Driven Architecture** - Comprehensive event system with TypeScript type definitions
+- **Streaming Tool Calls** - Handles partial JSON for streaming tool parameters
+- **Concise Design** - Only 11 source files with complete functionality
+
+## 📦 Installation
 
 ### Prerequisites
 
 - Node.js >= 20.0.0
+- npm >= 9.0.0
 
-### Installation
+### Quick Start
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/qiu.git
+cd qiu
+
+# Install dependencies
 npm install
-```
 
-### Building
-
-```bash
+# Build the project
 npm run build
-```
 
-This compiles the TypeScript source to the `dist/` directory.
-
-### Running
-
-**Development mode** (without building):
-
-```bash
+# Run in development mode
 npm run dev
+
+# Or use the built CLI directly
+node dist/cli.js
 ```
 
-**Using the built CLI**:
+## 🚀 Usage
 
+### Basic Usage
+
+**Using Ollama (local model)**:
 ```bash
-node dist/cli.js [options]
+qiu --model qwen2.5:7b
 ```
 
-### Options
+**Using OpenAI**:
+```bash
+qiu -m gpt-4o-mini -u https://api.openai.com -k sk-...
+```
+
+### Command Line Options
 
 ```
 -m, --model <id>       Model ID (default: qwen2.5:7b)
@@ -53,38 +72,35 @@ node dist/cli.js [options]
 -h, --help             Show this help
 ```
 
-### Examples
+### Environment Variables
 
-**Using Ollama (local)**:
-```bash
-qiu --model qwen2.5:7b
-```
-
-**Using Qwen3.6-35B-A3B-4bit**:
-```bash
-npm run dev -- --model Qwen3.6-35B-A3B-4bit -u http://127.0.0.1:8099
-```
-
-**Using OpenAI**:
-```bash
-qiu -m gpt-4o-mini -u https://api.openai.com -k sk-...
-```
-
-**Using environment variables**:
+For OpenAI-compatible APIs:
 ```bash
 export QIU_API_KEY=sk-...
 export QIU_BASE_URL=https://api.openai.com
 qiu --model gpt-4o-mini
 ```
 
-## REPL Commands
+### Advanced Examples
 
-- Type any message to interact with the agent
+**Custom model with specific API**:
+```bash
+npm run dev -- --model Qwen3.6-35B-A3B-4bit -u http://127.0.0.1:8099
+```
+
+**With system prompt**:
+```bash
+qiu --model claude-3-haiku --system "You are a helpful coding assistant"
+```
+
+## 💻 REPL Commands
+
+- Type any message to interact with the AI agent
 - `/reset` - Clear the conversation history
 - `/messages` - Show the number of messages in context
-- `Ctrl+C` - Exit
+- `Ctrl+C` - Exit the application
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 src/
@@ -102,268 +118,84 @@ src/
 └── types.ts           # Type definitions
 ```
 
-## Code Flow and Core Components
+## 🔧 Built-in Tools
 
-This section explains the code architecture and core components in detail.
+| Tool | Description | Implementation |
+|------|-------------|----------------|
+| `shell` | Execute Shell commands | `child_process.execFile()` |
+| `read_file` | Read file content | `fs/promises.readFile()` |
+| `write_file` | Write files (auto-creates directories) | `fs/promises.writeFile()` |
 
-### Overview
+## 🏗️ Architecture
 
-`qiu` is a **minimal AI Agent framework** designed for locally deployed large language models (such as Ollama), while also supporting remote APIs (OpenAI, etc.). It provides a command-line interface (REPL) that allows AI models to **automatically call tools** (read/write files, execute Shell commands) to help users complete tasks.
+### Core Components
 
-**Key Features:**
-- Streaming output, displaying AI responses in real-time
-- Supports local models (Ollama) and remote APIs (OpenAI, etc.)
-- Built-in three tools: shell command execution, file reading, file writing
-- Event-driven architecture
+1. **CLI (`cli.ts`)** - Command-line interface and parameter parsing
+2. **Agent (`agent.ts`)** - Core agent logic with message management
+3. **Agent Loop (`agent-loop.ts`)** - Main execution loop with tool calling
+4. **Provider (`provider.ts`)** - API communication layer with streaming support
+5. **EventStream (`event-stream.ts`)** - Generic event stream management
 
----
-
-### Core Code Flow
-
-The entire program consists of **CLI entry → Agent core → Agent Loop → Provider streaming communication**.
-
-#### Flowchart:
+### Data Flow
 
 ```
-User Input
-   ↓
-CLI (cli.ts) parses parameters, creates Agent instance, starts REPL interaction
-   ↓
-Agent.prompt() (agent.ts) receives user messages
-   ↓
-Agent.run() calls runAgentLoop()
-   ↓
-Agent Loop (agent-loop.ts):
-   1. Calls AI model to get response (streaming)
-   2. If response contains tool calls, executes tools
-   3. Adds tool results as context and sends to AI again
-   4. Repeats until AI stops calling tools or max turns reached
-   ↓
-Provider (provider.ts) communicates with OpenAI-compatible API
-   ↓
-EventStream (event-stream.ts) manages event streams
+User Input → CLI → Agent → Agent Loop → Provider → Event Stream
+                ↓
+           Tools (shell/read/write)
 ```
 
----
+## 🛠️ Development
 
-### Core Code Details
+### Building from Source
 
-#### 1. **CLI Entry (`src/cli.ts`)** — Program Entry Point
+```bash
+# Install dependencies
+npm install
 
-```typescript
-// Core flow:
-// 1. Parse command-line parameters (model, base-url, api-key, system prompt)
-// 2. Create Agent instance, configure model and tools
-// 3. Subscribe to events, implement streaming output to terminal
-// 4. Start REPL interactive command line
+# Build TypeScript to JavaScript
+npm run build
+
+# Run tests (if available)
+npm test
 ```
 
-**Key Code Sections:**
-- **Parameter parsing** (lines 22-64): Manually parse `--model`, `--base-url`, `-k` parameters
-- **Agent instantiation** (lines 108-114): Create Agent and configure default system prompt and tools
-- **Event listening** (lines 122-179): Subscribe to agent events, implement:
-  - `message_delta`: Print AI response text in real-time
-  - `tool_start` / `tool_end`: Display tool execution status
-  - `message_end`: Handle error messages
-- **REPL interaction** (lines 182-229): Use Node.js `readline` module, handle `/reset` and `/messages` commands
+### Adding Custom Tools
 
-#### 2. **Agent Core (`src/agent.ts`)** — Agent Class
+To add a new tool, implement the `Tool` interface:
 
-```typescript
-class Agent {
-  // Properties
-  public messages: Message[] = [];  // Conversation history (transcript)
-  public tools: Tool[];             // List of available tools
-  
-  // Core methods
-  async prompt(input: string | Message | Message[]): Promise<Message[]>
-  // Accepts user input, starts Agent execution flow
-  
-  subscribe(listener: (event: AgentEvent) => void): () => void
-  // Subscribe to events, returns unsubscribe function
-  
-  reset(): void  // Clear conversation history
-  abort(): void  // Abort current execution
-}
-```
-
-**Key Design:**
-- Uses **observer pattern** to manage event listeners
-- Maintains complete conversation history `messages` array
-- Supports concurrency control: `activeRun` prevents duplicate processing
-- Supports lifecycle hooks: `beforeToolCall` and `afterToolCall` allow intercepting/modifying tool calls
-
-#### 3. **Agent Loop (`src/agent-loop.ts`)** — Core Loop Logic
-
-```typescript
-async function runAgentLoop(
-  prompts: Message[],      // User input
-  context: Message[],      // Conversation history
-  config: AgentConfig,     // Configuration
-  emit: AgentEventSink,    // Event emitter
-): Promise<Message[]>
-```
-
-**Loop Logic:**
-
-```typescript
-while (turns < maxTurns) {
-  // 1. Send messages to AI model to get response (streaming)
-  const assistantMsg = await streamAssistantResponse(allMessages, config, emit);
-  
-  // 2. If response contains tool calls, execute tools
-  const toolCalls = assistantMsg.content.filter(c => c.type === 'toolCall');
-  for (const tc of toolCalls) {
-    const resultMsg = await executeToolCall(tc, config.tools, config, emit);
-    allMessages.push(resultMsg);  // Add tool results to conversation history
-  }
-  
-  // 3. If no tool calls, end the loop
-  if (toolCalls.length === 0) break;
-}
-```
-
-**Core function `streamAssistantResponse`**:
-- Calls `streamChat()` to get streaming response
-- Converts `ProviderEvent` to `AgentEvent` and dispatches
-
-**Core function `executeToolCall`**:
-- Finds matching tool
-- Calls `beforeToolCall` hook (can block execution)
-- Executes tool and captures errors
-- Calls `afterToolCall` hook (can modify results)
-
-#### 4. **Provider Communication (`src/provider.ts`)** — API Communication Layer
-
-```typescript
-export function streamChat(
-  model: Model,
-  systemPrompt: string | undefined,
-  messages: Message[],
-  tools: Tool[],
-  options?: StreamOptions,
-): ProviderStream
-```
-
-**Core Functionality:**
-- Uses native `fetch()` API to send HTTP requests
-- Parses **SSE (Server-Sent Events)** streaming response
-- Supports **streaming tool call parsing**: Uses `partial-json` library to handle chunked JSON
-
-**Key Processing Flow:**
-1. Build OpenAI-compatible request body (lines 173-206)
-2. Read stream using `response.body.getReader()` (line 228)
-3. Parse SSE data line by line, extract text and tool calls
-4. Handle **chunked tool call parameters** (lines 293-358):
-   - Maintain `toolCallPartials` to temporarily store chunked tool call information
-   - Use `parsePartialJson()` to process incomplete JSON
-
-#### 5. **Event Stream (`src/event-stream.ts`)** — Generic Event Stream Management
-
-```typescript
-class EventStream<T, R = T> implements AsyncIterable<T> {
-  private queue: T[] = [];
-  private waiting: ((value: IteratorResult<T>) => void)[] = [];
-  
-  push(event: T): void        // Producer: push events
-  end(result?: R): void       // End stream
-  result(): Promise<R>        // Get final result
-}
-```
-
-**Design Highlights:**
-- Implements `AsyncIterable` interface, supports `for-await-of` syntax
-- Supports both **push/pull** usage modes
-- Consumers consume events via `for await (const event of stream)`
-- Producers push events via `stream.push(event)`
-
-#### 6. **Tool System (`src/tools/`)** — Built-in Tools
-
-**Three Built-in Tools:**
-
-| Tool | Function | Core Implementation |
-|------|----------|---------------------|
-| `shell` | Execute Shell commands | Uses `child_process.execFile()` |
-| `read_file` | Read file content | Uses `fs/promises.readFile()` |
-| `write_file` | Write files | Uses `fs/promises.writeFile()`, auto-creates directories |
-
-**Tool Interface (`types.ts`):**
 ```typescript
 interface Tool {
   name: string;
   description: string;
-  parameters: JsonSchema;  // JSON Schema for tool parameters
+  parameters: JsonSchema;
   execute: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<ToolResult>;
 }
 ```
 
----
+## 📚 API Reference
 
-### Core Architecture Summary
+For detailed API documentation, see the source code comments and TypeScript definitions in `src/types.ts`.
 
-```
-┌─────────────────────────────────────────────────────┐
-│                     CLI (cli.ts)                     │
-│  ┌─────────────┐    ┌──────────────────────────┐   │
-│  │ Parameter    │    │ Event Listener (Subscrip │   │
-│  │ Parsing      │    │ tion Mechanism)          │   │
-│  └─────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│                   Agent (agent.ts)                   │
-│  ┌─────────────┐    ┌──────────────────────────┐   │
-│  │ Message      │    │ Lifecycle Hooks          │   │
-│  │ Management   │    │                          │   │
-│  └─────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│              Agent Loop (agent-loop.ts)              │
-│  ┌─────────────┐    ┌──────────────────────────┐   │
-│  │ Loop Control │    │ Tool Execution Engine    │   │
-│  └─────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│                 Provider (provider.ts)               │
-│  ┌─────────────┐    ┌──────────────────────────┐   │
-│  │ API          │    │ Streaming Response       │   │
-│  │ Communication│    │ Parsing                  │   │
-│  └─────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────┐
-│              EventStream (event-stream.ts)           │
-│  ┌─────────────┐    ┌──────────────────────────┐   │
-│  │ Event Queue  │    │ Async Iteration Protocol │   │
-│  └─────────────┘    └──────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-```
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [Ollama](https://ollama.com/) for local LLM support
+- [OpenAI](https://openai.com/) API compatibility
+- All contributors who help make qiu better
 
 ---
 
-### Key Technical Points
-
-1. **Streaming Processing**: Uses Node.js ReadableStream and SSE protocol for real-time output
-2. **Event-Driven Architecture**: Decouples components through event system
-3. **Type Safety**: Comprehensive TypeScript type definitions (Message, Tool, AgentEvent, etc.)
-4. **Tool Calls**: Supports AI automatically deciding when to call tools, enabling true Agent capabilities
-5. **Partial JSON Parsing**: Uses `partial-json` library to handle chunked tool call parameters
-
----
-
-### Summary
-
-This is a **well-designed minimal AI Agent framework** with core highlights:
-
-- **Concise**: Only 11 source files, low code volume but complete functionality
-- **Flexible**: Supports multiple AI backends (Ollama, OpenAI, etc.)
-- **Extensible**: Easily add new tools through `Tool` interface
-- **Practical**: Built-in file operations and command execution tools, truly capable as an "assistant"
-
-The core flow can be summarized as: **User Input → Agent Scheduling → AI Response → Tool Execution → Loop**, until the AI no longer needs to call tools.
-
-## License
-
-MIT
+**Made with ❤️ by [your-username]**
