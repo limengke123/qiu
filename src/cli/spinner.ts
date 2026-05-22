@@ -1,25 +1,24 @@
 /**
- * Braille spinner animation for terminal.
+ * Braille spinner animation with chalk colors and elapsed time.
  */
+
+import { t, CLEAR_LINE } from "./theme.js";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const INTERVAL_MS = 80;
-
-const CYAN = "\x1b[36m";
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
-const CLEAR_LINE = "\x1b[2K\r";
 
 export class Spinner {
 	private frame = 0;
 	private timer: NodeJS.Timeout | null = null;
 	private message = "";
 	private running = false;
+	private startTime = 0;
 
 	start(message = "Thinking..."): void {
 		this.message = message;
 		this.running = true;
 		this.frame = 0;
+		this.startTime = Date.now();
 		this.render();
 		this.timer = setInterval(() => {
 			this.frame = (this.frame + 1) % FRAMES.length;
@@ -42,7 +41,10 @@ export class Spinner {
 	}
 
 	private render(): void {
-		const spinner = `${CYAN}${FRAMES[this.frame]}${RESET}`;
-		process.stdout.write(`${CLEAR_LINE}${spinner} ${DIM}${this.message}${RESET}`);
+		const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+		const icon = t.spinner(FRAMES[this.frame]);
+		const msg = t.spinnerText(this.message);
+		const time = t.dim(`(${elapsed}s)`);
+		process.stdout.write(`${CLEAR_LINE}  ${icon} ${msg} ${time}`);
 	}
 }

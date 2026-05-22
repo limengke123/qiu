@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Qiu CLI - minimal agent REPL for local LLMs.
- * Features: drag-and-drop images, spinner animation, status bar, markdown output.
+ * Qiu CLI — polished agent REPL for local LLMs.
  */
 
 import * as readline from "node:readline";
+import chalk from "chalk";
+import figures from "figures";
 import { Agent } from "./agent.js";
 import { ConfigManager } from "./config-manager.js";
 import { SessionStore } from "./session-store.js";
@@ -13,7 +14,12 @@ import { defaultTools } from "./tools/index.js";
 import { Spinner } from "./cli/spinner.js";
 import { renderStatusBar } from "./cli/status-bar.js";
 import { renderToolStart, renderToolEnd } from "./cli/tool-card.js";
+import { renderBanner } from "./cli/banner.js";
+import { renderUserMessage } from "./cli/user-message.js";
+import { renderMarkdown } from "./cli/markdown.js";
+import { renderSeparator, type TurnStats } from "./cli/separator.js";
 import { handlePaste, type AttachedImage } from "./cli/paste-handler.js";
+import { t, SHOW_CURSOR } from "./cli/theme.js";
 import type {
 	AgentEvent,
 	ImageContent,
@@ -22,19 +28,7 @@ import type {
 	UserMessage,
 } from "./types.js";
 
-// ── ANSI ──
-
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const CYAN = "\x1b[36m";
-const MAGENTA = "\x1b[35m";
-const YELLOW = "\x1b[33m";
-const CLEAR_LINE = "\x1b[2K\r";
-
-// Bracketed paste mode
+// Bracketed paste
 const PASTE_MODE_ON = "\x1b[?2004h";
 const PASTE_MODE_OFF = "\x1b[?2004l";
 const PASTE_START = "\x1b[200~";
@@ -106,14 +100,14 @@ function parseArgs(): CliArgs {
 
 function printHelp(): void {
 	console.log(`
-${BOLD}qiu${RESET} - Minimal agent for local LLMs
+${chalk.bold("qiu")} — Minimal agent for local LLMs
 
-${BOLD}Usage:${RESET}
+${chalk.bold("Usage:")}
   qiu [options]
   qiu config                  Show effective configuration
   qiu sessions                List saved sessions
 
-${BOLD}Options:${RESET}
+${chalk.bold("Options:")}
   -m, --model <id>            Model ID (default: qwen2.5:7b)
   -u, --base-url <url>        API base URL (default: http://localhost:11434)
   -k, --api-key <key>         API key (or set QIU_API_KEY / OPENAI_API_KEY)
@@ -122,10 +116,10 @@ ${BOLD}Options:${RESET}
   -r, --resume [id]           Resume last session (or specify session ID)
   -h, --help                  Show this help
 
-${BOLD}REPL:${RESET}
+${chalk.bold("REPL:")}
   Type your message and press Enter. Drag image files directly into terminal.
-  
-${BOLD}Commands:${RESET}
+
+${chalk.bold("Commands:")}
   /save         Show current session info
   /sessions     List saved sessions
   /load <id>    Load a saved session
@@ -186,10 +180,10 @@ async function main(): Promise<void> {
 			agent.messages = session.messages;
 			sessionId = session.meta.id;
 			console.log(
-				`${GREEN}↺${RESET} Resumed ${CYAN}${sessionId}${RESET} ${DIM}"${session.meta.title}" (${session.messages.length} msgs)${RESET}`,
+				`  ${t.success(figures.play)} Resumed ${t.statusSession(sessionId)} ${t.dim(`"${session.meta.title}" (${session.messages.length} msgs)`)}`,
 			);
 		} else if (cliArgs.resume !== true) {
-			console.log(`${RED}Session not found: ${cliArgs.resume}${RESET}`);
+			console.log(t.error(`Session not found: ${cliArgs.resume}`));
 			process.exit(1);
 		}
 	}
@@ -204,15 +198,8 @@ async function main(): Promise<void> {
 		}
 	});
 
-	// Header
-	console.log();
-	console.log(
-		`  ${BOLD}qiu${RESET} ${DIM}v0.1.0${RESET}  ${CYAN}${resolved.model.id}${RESET}  ${DIM}${resolved.model.baseUrl}${RESET}`,
-	);
-	console.log(
-		`  ${DIM}Drag images into terminal to attach. /help for commands.${RESET}`,
-	);
-	console.log();
+	// ── Banner ──
+	console.log(renderBanner(resolved.model.id, resolved.model.baseUrl));
 
 	// Spinner + streaming state
 	const spinner = new Spinner();
@@ -220,6 +207,7 @@ async function main(): Promise<void> {
 	let firstDelta = true;
 	let streamBuffer = "";
 	let turnStartTime = 0;
+	let lastTurnStats: TurnStats | undefined;
 
 	// Agent event handler
 	agent.subscribe((event: AgentEvent) => {
@@ -239,6 +227,7 @@ async function main(): Promise<void> {
 			case "message_delta":
 				if (firstDelta) {
 					spinner.stop();
+					process.stdout.write(`\n  ${t.accentBright(figures.pointer)} `);
 					firstDelta = false;
 					isStreaming = true;
 				}
@@ -253,10 +242,22 @@ async function main(): Promise<void> {
 
 					const msg = event.message;
 					if (msg.stopReason === "error") {
-						console.log(`\n${RED}Error: ${msg.errorMessage}${RESET}`);
+						console.log(`\n  ${t.error(figures.cross + " " + msg.errorMessage)}`);
 					} else if (streamBuffer) {
-						// Re-render with markdown if the response is complete and wasn't streamed char by char
-						process.stdout.write("\n");
+						// Clear raw stream output, re-render with markdown
+						const rendered = renderMarkdown(streamBuffer);
+						if (rendered !== streamBuffer.trimEnd()) {
+							// Move cursor up and clear the streamed lines, redraw rendered
+							const rawLines = streamBuffer.split("\n").length;
+							process.stdout.write("\r");
+							for (let i = 0; i < rawLines; i++) {
+								process.stdout.write("\x1b[2K\x1b[1A");
+							}
+							process.stdout.write("\x1b[2K\r");
+							console.log(`\n${rendered}`);
+						} else {
+							process.stdout.write("\n");
+						}
 					}
 				}
 				break;
@@ -267,9 +268,7 @@ async function main(): Promise<void> {
 					process.stdout.write("\n");
 					isStreaming = false;
 				}
-				console.log(
-					renderToolStart(event.toolName, event.args),
-				);
+				console.log(renderToolStart(event.toolName, event.args));
 				spinner.start(`Running ${event.toolName}...`);
 				break;
 
@@ -284,19 +283,18 @@ async function main(): Promise<void> {
 
 			case "context_truncated":
 				console.log(
-					`${DIM}⚠ context trimmed: dropped ${event.droppedCount} msgs (~${event.estimatedTokens} tokens)${RESET}`,
+					`  ${t.warning(`${figures.warning} context trimmed: dropped ${event.droppedCount} msgs (~${event.estimatedTokens} tokens)`)}`,
 				);
 				break;
 
 			case "turn_end": {
 				const elapsed = Date.now() - turnStartTime;
 				const msg = event.message;
-				if (msg.usage.total > 0) {
-					const secs = (elapsed / 1000).toFixed(1);
-					console.log(
-						`${DIM}  ↑${formatTokens(msg.usage.input)} ↓${formatTokens(msg.usage.output)} (${formatTokens(msg.usage.total)} total) ${secs}s${RESET}`,
-					);
-				}
+				lastTurnStats = {
+					inputTokens: msg.usage.input || undefined,
+					outputTokens: msg.usage.output || undefined,
+					durationMs: elapsed,
+				};
 				break;
 			}
 		}
@@ -312,25 +310,21 @@ async function main(): Promise<void> {
 	// Enable bracketed paste mode
 	process.stdout.write(PASTE_MODE_ON);
 	process.on("exit", () => {
-		process.stdout.write(PASTE_MODE_OFF);
+		process.stdout.write(PASTE_MODE_OFF + SHOW_CURSOR);
 	});
 	process.on("SIGINT", () => {
-		process.stdout.write(PASTE_MODE_OFF);
-		console.log(`\n${DIM}bye${RESET}`);
+		process.stdout.write(PASTE_MODE_OFF + SHOW_CURSOR);
+		console.log(`\n  ${t.dim("bye")}`);
 		process.exit(0);
 	});
 
 	// Pending image attachments from drag-and-drop
 	let pendingImages: AttachedImage[] = [];
 
-	// Intercept paste sequences from raw stdin
+	// Paste detection
 	if (process.stdin.isTTY) {
-		process.stdin.setRawMode(false); // readline handles raw mode itself
+		process.stdin.setRawMode(false);
 	}
-
-	// We handle paste detection via the readline line event by checking input
-	// However, for proper bracketed paste detection we need to intercept stdin data
-	const originalWrite = process.stdin.push.bind(process.stdin);
 
 	let pasteBuffer = "";
 	let inPaste = false;
@@ -370,17 +364,21 @@ async function main(): Promise<void> {
 			pendingImages.push(result.image);
 			const sizeMB = (result.image.size / 1024 / 1024).toFixed(2);
 			console.log(
-				`\n${MAGENTA}📎 attached: ${result.image.filename}${RESET} ${DIM}(${result.image.mimeType}, ${sizeMB}MB)${RESET}`,
+				`\n  ${t.accent("📎")} ${chalk.white(result.image.filename)} ${t.dim(`(${result.image.mimeType}, ${sizeMB}MB)`)}`,
 			);
-			// Re-show prompt
 			rl.prompt();
 		} else if (result.text) {
-			// Simulate typing the pasted text into readline
 			rl.write(result.text);
 		}
 	}
 
 	const promptUser = (): void => {
+		// Separator with stats (after first turn)
+		if (lastTurnStats) {
+			console.log(renderSeparator(lastTurnStats));
+			lastTurnStats = undefined;
+		}
+
 		// Status bar
 		const statusLine = renderStatusBar({
 			messages: agent.messages,
@@ -390,7 +388,7 @@ async function main(): Promise<void> {
 		});
 		console.log(statusLine);
 
-		rl.setPrompt(`${BOLD}❯${RESET} `);
+		rl.setPrompt(`  ${t.accent(figures.pointer)} `);
 		rl.prompt();
 	};
 
@@ -403,12 +401,22 @@ async function main(): Promise<void> {
 		}
 
 		try {
-			const handled = await handleCommand(trimmed, agent, store, sessionId, (id) => { sessionId = id; }, resolved);
+			const handled = await handleCommand(
+				trimmed,
+				agent,
+				store,
+				sessionId,
+				(id) => { sessionId = id; },
+				resolved,
+			);
 			if (handled) {
 				console.log();
 				promptUser();
 				return;
 			}
+
+			// Show user message card
+			console.log(renderUserMessage(trimmed));
 
 			// Build message with any pending images
 			if (pendingImages.length > 0) {
@@ -438,7 +446,7 @@ async function main(): Promise<void> {
 		} catch (error) {
 			spinner.stop();
 			console.error(
-				`${RED}${error instanceof Error ? error.message : String(error)}${RESET}`,
+				`  ${t.error(figures.cross)} ${t.error(error instanceof Error ? error.message : String(error))}`,
 			);
 		}
 
@@ -447,8 +455,8 @@ async function main(): Promise<void> {
 	});
 
 	rl.on("close", () => {
-		process.stdout.write(PASTE_MODE_OFF);
-		console.log(`\n${DIM}bye${RESET}`);
+		process.stdout.write(PASTE_MODE_OFF + SHOW_CURSOR);
+		console.log(`\n  ${t.dim("bye")}`);
 		process.exit(0);
 	});
 
@@ -468,29 +476,29 @@ async function handleCommand(
 	if (input === "/reset") {
 		agent.reset();
 		setSessionId(store.create(resolved.model.id));
-		console.log(`${DIM}Conversation reset. New session started.${RESET}`);
+		console.log(`  ${t.dim("Conversation reset. New session started.")}`);
 		return true;
 	}
 
 	if (input === "/messages") {
 		console.log(
-			`${DIM}${agent.messages.length} messages${sessionId ? ` (session: ${sessionId})` : ""}${RESET}`,
+			`  ${t.dim(`${agent.messages.length} messages${sessionId ? ` (session: ${sessionId})` : ""}`)}`,
 		);
 		return true;
 	}
 
 	if (input === "/help") {
 		console.log(`
-${BOLD}Commands:${RESET}
-  ${BOLD}/save${RESET}              Show current session info
-  ${BOLD}/sessions${RESET}          List saved sessions
-  ${BOLD}/load <id>${RESET}         Load a saved session
-  ${BOLD}/config${RESET}            Show effective configuration
-  ${BOLD}/reset${RESET}             Clear and start new session
-  ${BOLD}/messages${RESET}          Show message count
-  ${BOLD}/help${RESET}              Show this help
+${chalk.bold("Commands:")}
+  ${chalk.bold("/save")}              Show current session info
+  ${chalk.bold("/sessions")}          List saved sessions
+  ${chalk.bold("/load <id>")}         Load a saved session
+  ${chalk.bold("/config")}            Show effective configuration
+  ${chalk.bold("/reset")}             Clear and start new session
+  ${chalk.bold("/messages")}          Show message count
+  ${chalk.bold("/help")}              Show this help
 
-${DIM}Tip: Drag image files directly into the terminal to attach them.${RESET}`);
+${t.dim("Tip: Drag image files directly into the terminal to attach them.")}`);
 		return true;
 	}
 
@@ -501,13 +509,13 @@ ${DIM}Tip: Drag image files directly into the terminal to attach them.${RESET}`)
 
 	if (input === "/save") {
 		if (!sessionId) {
-			console.log(`${DIM}No active session. Send a message first.${RESET}`);
+			console.log(`  ${t.dim("No active session. Send a message first.")}`);
 		} else {
 			const session = store.load(sessionId);
 			console.log(
-				`${GREEN}✓${RESET} Session ${CYAN}${sessionId}${RESET} "${session.meta.title}" (${session.meta.messageCount} msgs)`,
+				`  ${t.success(figures.tick)} Session ${t.statusSession(sessionId)} "${session.meta.title}" (${session.meta.messageCount} msgs)`,
 			);
-			console.log(`${DIM}  ${store.directory}/${sessionId}.jsonl${RESET}`);
+			console.log(`  ${t.dim(`${store.directory}/${sessionId}.jsonl`)}`);
 		}
 		return true;
 	}
@@ -520,25 +528,25 @@ ${DIM}Tip: Drag image files directly into the terminal to attach them.${RESET}`)
 	if (input.startsWith("/load")) {
 		const targetId = input.slice(5).trim();
 		if (!targetId) {
-			console.log(`${RED}Usage: /load <session-id>${RESET}`);
+			console.log(`  ${t.error("Usage: /load <session-id>")}`);
 			return true;
 		}
 		if (!store.exists(targetId)) {
-			console.log(`${RED}Session not found: ${targetId}${RESET}`);
+			console.log(`  ${t.error(`Session not found: ${targetId}`)}`);
 			return true;
 		}
 		const session = store.load(targetId);
 		agent.messages = session.messages;
 		setSessionId(session.meta.id);
 		console.log(
-			`${GREEN}↺${RESET} Loaded ${CYAN}${session.meta.id}${RESET} "${session.meta.title}" (${session.messages.length} msgs)`,
+			`  ${t.success(figures.play)} Loaded ${t.statusSession(session.meta.id)} "${session.meta.title}" (${session.messages.length} msgs)`,
 		);
 		return true;
 	}
 
 	if (input.startsWith("/")) {
 		console.log(
-			`${RED}Unknown command: ${input.split(" ")[0]}${RESET} ${DIM}(type /help)${RESET}`,
+			`  ${t.error(`Unknown command: ${input.split(" ")[0]}`)} ${t.dim("(type /help)")}`,
 		);
 		return true;
 	}
@@ -553,19 +561,19 @@ function runSessionsCommand(): void {
 	const sessions = store.list(20);
 
 	if (sessions.length === 0) {
-		console.log(`${DIM}No saved sessions.${RESET}`);
+		console.log(`  ${t.dim("No saved sessions.")}`);
 		return;
 	}
 
-	console.log(`\n${BOLD}Sessions:${RESET}\n`);
+	console.log(`\n${chalk.bold("  Sessions:")}\n`);
 	for (const s of sessions) {
 		const date = new Date(s.updatedAt).toLocaleString();
 		const title = s.title.length > 36 ? s.title.slice(0, 33) + "..." : s.title;
 		console.log(
-			`  ${CYAN}${s.id}${RESET}  ${title.padEnd(36)}  ${DIM}${s.model}  ${s.messageCount} msgs  ${date}${RESET}`,
+			`  ${t.statusSession(s.id)}  ${chalk.white(title.padEnd(36))}  ${t.dim(`${s.model}  ${s.messageCount} msgs  ${date}`)}`,
 		);
 	}
-	console.log(`\n${DIM}  Resume: qiu --resume <id>  or  /load <id>${RESET}\n`);
+	console.log(`\n  ${t.dim(`Resume: qiu --resume <id>  or  /load <id>`)}\n`);
 }
 
 function runConfigCommand(): void {
@@ -573,32 +581,25 @@ function runConfigCommand(): void {
 	const resolved = mgr.resolve();
 	const src = resolved.sources;
 
-	console.log(`\n${BOLD}qiu config${RESET}\n`);
-	console.log(`  ${DIM}user config${RESET}     ${src.userConfigPath}${src.userConfig ? ` ${GREEN}✓${RESET}` : ""}`);
-	console.log(`  ${DIM}project config${RESET}  ${src.projectConfigPath}${src.projectConfig ? ` ${GREEN}✓${RESET}` : ""}`);
+	console.log(`\n${chalk.bold("  qiu config")}\n`);
+	console.log(`  ${t.dim("user config")}     ${src.userConfigPath}${src.userConfig ? ` ${t.success(figures.tick)}` : ""}`);
+	console.log(`  ${t.dim("project config")}  ${src.projectConfigPath}${src.projectConfig ? ` ${t.success(figures.tick)}` : ""}`);
 	console.log();
-	console.log(`${BOLD}  Effective:${RESET}`);
-	console.log(`  model             ${CYAN}${resolved.model.id}${RESET}`);
+	console.log(`  ${chalk.bold("Effective:")}`);
+	console.log(`  model             ${t.statusModel(resolved.model.id)}`);
 	console.log(`  base-url          ${resolved.model.baseUrl}`);
-	console.log(`  api-key           ${resolved.model.apiKey ? "***" + resolved.model.apiKey.slice(-4) : DIM + "(none)" + RESET}`);
-	console.log(`  system-prompt     ${DIM}${truncate(resolved.systemPrompt, 50)}${RESET}`);
-	console.log(`  max-context       ${resolved.maxContextTokens ?? DIM + "(unlimited)" + RESET}`);
-	console.log(`  temperature       ${resolved.model.temperature ?? DIM + "(auto)" + RESET}`);
-	console.log(`  max-tokens        ${resolved.model.maxTokens ?? DIM + "(auto)" + RESET}`);
+	console.log(`  api-key           ${resolved.model.apiKey ? "***" + resolved.model.apiKey.slice(-4) : t.dim("(none)")}`);
+	console.log(`  system-prompt     ${t.dim(truncate(resolved.systemPrompt, 50))}`);
+	console.log(`  max-context       ${resolved.maxContextTokens ?? t.dim("(unlimited)")}`);
+	console.log(`  temperature       ${resolved.model.temperature ?? t.dim("(auto)")}`);
+	console.log(`  max-tokens        ${resolved.model.maxTokens ?? t.dim("(auto)")}`);
 	console.log(`  max-turns         ${resolved.maxTurns}`);
 	console.log();
-	console.log(`${DIM}  Config files: ~/.config/qiu/config.json or ./qiu.json${RESET}`);
-	console.log(`${DIM}  Env vars: QIU_MODEL, QIU_BASE_URL, QIU_API_KEY, ...${RESET}\n`);
+	console.log(`  ${t.dim("Config files: ~/.config/qiu/config.json or ./qiu.json")}`);
+	console.log(`  ${t.dim("Env vars: QIU_MODEL, QIU_BASE_URL, QIU_API_KEY, ...")}\n`);
 }
 
 // ── Helpers ──
-
-function formatTokens(n: number): string {
-	if (n < 1000) return String(n);
-	if (n < 10000) return (n / 1000).toFixed(1) + "k";
-	if (n < 1000000) return Math.round(n / 1000) + "k";
-	return (n / 1000000).toFixed(1) + "M";
-}
 
 function truncate(s: string, max: number): string {
 	const oneLine = s.replace(/\n/g, " ");
@@ -607,7 +608,7 @@ function truncate(s: string, max: number): string {
 }
 
 main().catch((error) => {
-	process.stdout.write(PASTE_MODE_OFF);
+	process.stdout.write(PASTE_MODE_OFF + SHOW_CURSOR);
 	console.error(error);
 	process.exit(1);
 });

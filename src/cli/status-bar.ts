@@ -1,18 +1,13 @@
 /**
  * Status bar rendering for the CLI footer.
- * Shows: cwd (git branch) | token stats | context% | session | model
+ * Shows: cwd (git branch) | token stats | progress bar | session | model
  */
 
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
+import figures from "figures";
 import type { Message, AssistantMessage } from "../types.js";
-
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
-const CYAN = "\x1b[36m";
-const YELLOW = "\x1b[33m";
-const RED = "\x1b[31m";
-const GREEN = "\x1b[32m";
+import { t } from "./theme.js";
 
 export interface StatusBarData {
 	messages: Message[];
@@ -49,10 +44,11 @@ function formatTokens(n: number): string {
 	return (n / 1000000).toFixed(1) + "M";
 }
 
-function colorizePercent(percent: number, text: string): string {
-	if (percent > 90) return `${RED}${text}${RESET}`;
-	if (percent > 70) return `${YELLOW}${text}${RESET}`;
-	return `${GREEN}${text}${RESET}`;
+function renderProgressBar(percent: number, width = 10): string {
+	const filled = Math.round((percent / 100) * width);
+	const empty = width - filled;
+	const bar = t.progressFilled("■".repeat(filled)) + t.progressEmpty("□".repeat(empty));
+	return bar;
 }
 
 export function renderStatusBar(data: StatusBarData): string {
@@ -61,7 +57,7 @@ export function renderStatusBar(data: StatusBarData): string {
 	// CWD + git branch
 	const cwd = shortCwd();
 	const branch = getGitBranch();
-	parts.push(branch ? `${cwd} (${branch})` : cwd);
+	parts.push(t.statusDim(branch ? `${cwd} (${branch})` : cwd));
 
 	// Token stats from assistant messages
 	let totalInput = 0;
@@ -73,10 +69,10 @@ export function renderStatusBar(data: StatusBarData): string {
 		}
 	}
 	if (totalInput > 0 || totalOutput > 0) {
-		parts.push(`↑${formatTokens(totalInput)} ↓${formatTokens(totalOutput)}`);
+		parts.push(t.dim(`${figures.arrowUp}${formatTokens(totalInput)} ${figures.arrowDown}${formatTokens(totalOutput)}`));
 	}
 
-	// Context usage
+	// Context usage with progress bar
 	if (data.maxContextTokens) {
 		const lastAssistant = [...data.messages]
 			.reverse()
@@ -84,20 +80,20 @@ export function renderStatusBar(data: StatusBarData): string {
 		if (lastAssistant && lastAssistant.usage.input > 0) {
 			const used = lastAssistant.usage.input + lastAssistant.usage.output;
 			const percent = Math.min(100, (used / data.maxContextTokens) * 100);
-			const label = `ctx:${percent.toFixed(0)}%/${formatTokens(data.maxContextTokens)}`;
-			parts.push(colorizePercent(percent, label));
+			const bar = renderProgressBar(percent);
+			parts.push(`${bar} ${t.dim(`${percent.toFixed(0)}%/${formatTokens(data.maxContextTokens)}`)}`);
 		} else {
-			parts.push(`ctx:${formatTokens(data.maxContextTokens)}`);
+			parts.push(t.dim(`ctx:${formatTokens(data.maxContextTokens)}`));
 		}
 	}
 
-	// Session
+	// Session (green dot = active)
 	if (data.sessionId) {
-		parts.push(`${CYAN}${data.sessionId}${RESET}`);
+		parts.push(`${t.success(figures.bullet)} ${t.statusSession(data.sessionId.slice(0, 7))}`);
 	}
 
 	// Model
-	parts.push(data.modelId);
+	parts.push(t.statusModel(data.modelId));
 
-	return `${DIM}${parts.join("  ")}${RESET}`;
+	return `  ${parts.join("  ")}`;
 }

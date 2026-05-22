@@ -1,63 +1,63 @@
 /**
- * Tool execution card rendering with box-drawing borders.
+ * Tool execution card with colored borders, background, and status icons.
  */
 
-const DIM = "\x1b[2m";
-const RESET = "\x1b[0m";
-const BOLD = "\x1b[1m";
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const CYAN = "\x1b[36m";
+import figures from "figures";
+import { t } from "./theme.js";
 
 function termWidth(): number {
 	return process.stdout.columns || 80;
 }
 
 function truncLine(text: string, maxWidth: number): string {
-	if (text.length <= maxWidth) return text;
+	const stripped = stripAnsi(text);
+	if (stripped.length <= maxWidth) return text;
 	return text.slice(0, maxWidth - 3) + "...";
 }
 
-/**
- * Render the tool invocation header.
- */
+function stripAnsi(str: string): string {
+	return str.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 export function renderToolStart(
 	toolName: string,
 	args: Record<string, unknown>,
 ): string {
-	const width = Math.min(termWidth(), 72);
+	const width = Math.min(termWidth() - 2, 72);
 	const label = ` ${toolName} `;
-	const argsStr = formatToolArgs(args);
-	const borderLen = Math.max(0, width - 2 - label.length);
+	const icon = ` ${figures.hamburger}`;
+	const borderLen = Math.max(0, width - 2 - label.length - icon.length);
 
 	const lines: string[] = [];
-	lines.push(`${DIM}┌─${RESET}${YELLOW}${BOLD}${label}${RESET}${DIM}${"─".repeat(borderLen)}${RESET}`);
+	lines.push(
+		`  ${t.borderAccent("┌─")}${t.accent.bold(label)}${t.borderAccent("─".repeat(borderLen))}${t.dim(icon)}`,
+	);
 
+	const argsStr = formatToolArgs(args);
 	if (argsStr) {
 		for (const line of argsStr.split("\n")) {
-			lines.push(`${DIM}│${RESET} ${CYAN}${truncLine(line, width - 4)}${RESET}`);
+			lines.push(`  ${t.borderAccent("│")} ${t.toolBg(` ${truncLine(line, width - 5)} `)}`);
 		}
 	}
 
 	return lines.join("\n");
 }
 
-/**
- * Render the tool result (success or error).
- */
 export function renderToolEnd(
 	result: string,
 	isError: boolean,
 ): string {
-	const width = Math.min(termWidth(), 72);
+	const width = Math.min(termWidth() - 2, 72);
+	const borderFn = isError ? t.borderError : t.borderSuccess;
+	const bgFn = isError ? t.toolErrorBg : t.toolSuccessBg;
 	const border = "─".repeat(width - 1);
+
 	const lines: string[] = [];
+	lines.push(`  ${borderFn("├" + border)}`);
 
-	lines.push(`${DIM}├${border}${RESET}`);
-
-	const icon = isError ? `${RED}✗${RESET}` : `${GREEN}✓${RESET}`;
-	const color = isError ? RED : DIM;
+	const icon = isError
+		? t.error(figures.cross)
+		: t.success(figures.tick);
 
 	const resultLines = result.split("\n");
 	const maxLines = 12;
@@ -65,14 +65,15 @@ export function renderToolEnd(
 
 	for (let i = 0; i < shown.length; i++) {
 		const prefix = i === 0 ? icon : " ";
-		lines.push(`${DIM}│${RESET} ${prefix} ${color}${truncLine(shown[i], width - 6)}${RESET}`);
+		const content = truncLine(shown[i], width - 6);
+		lines.push(`  ${borderFn("│")} ${prefix} ${bgFn(` ${content} `)}`);
 	}
 
 	if (resultLines.length > maxLines) {
-		lines.push(`${DIM}│${RESET}   ${DIM}... (${resultLines.length - maxLines} more lines)${RESET}`);
+		lines.push(`  ${borderFn("│")}   ${t.dim(`... (${resultLines.length - maxLines} more lines)`)}`);
 	}
 
-	lines.push(`${DIM}└${border}${RESET}`);
+	lines.push(`  ${borderFn("└" + border)}`);
 	return lines.join("\n");
 }
 
@@ -83,14 +84,13 @@ function formatToolArgs(args: Record<string, unknown>): string {
 	if (entries.length === 1) {
 		const [, val] = entries[0];
 		const str = String(val);
-		// For shell commands, show the command directly
 		return str.length > 200 ? str.slice(0, 197) + "..." : str;
 	}
 
 	return entries
 		.map(([k, v]) => {
 			const val = String(v);
-			return `${k}: ${val.length > 80 ? val.slice(0, 77) + "..." : val}`;
+			return `${t.dim(k + ":")} ${val.length > 80 ? val.slice(0, 77) + "..." : val}`;
 		})
 		.join("\n");
 }
