@@ -2,6 +2,7 @@
  * Core agent loop: stream assistant response -> execute tool calls -> repeat.
  */
 
+import { fitContext } from "./context-window.js";
 import { streamChat, type ProviderStream } from "./provider.js";
 import type {
 	AgentConfig,
@@ -107,10 +108,29 @@ async function streamAssistantResponse(
 	config: AgentConfig,
 	emit: AgentEventSink,
 ): Promise<AssistantMessage> {
+	let effectiveMessages = messages;
+
+	if (config.contextWindow) {
+		const fitResult = await fitContext(
+			config.systemPrompt,
+			messages,
+			config.contextWindow,
+		);
+		effectiveMessages = fitResult.messages;
+
+		if (fitResult.truncated) {
+			await emit({
+				type: "context_truncated",
+				droppedCount: fitResult.droppedCount,
+				estimatedTokens: fitResult.estimatedTokens,
+			});
+		}
+	}
+
 	const providerStream = streamChat(
 		config.model,
 		config.systemPrompt,
-		messages,
+		effectiveMessages,
 		config.tools ?? [],
 		{
 			signal: config.signal,

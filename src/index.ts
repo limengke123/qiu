@@ -5,6 +5,9 @@ export type { AgentOptions } from "./agent.js";
 // Loop
 export { runAgentLoop } from "./agent-loop.js";
 
+// Context window
+export { fitContext, estimateTokens, estimateMessageTokens } from "./context-window.js";
+
 // Provider
 export { streamChat } from "./provider.js";
 export type { ProviderStream, StreamOptions } from "./provider.js";
@@ -20,6 +23,7 @@ export type {
 	AgentConfig,
 	AgentEvent,
 	AssistantMessage,
+	ContextWindowConfig,
 	ImageContent,
 	JsonSchema,
 	Message,

@@ -7,6 +7,7 @@ import type {
 	AgentConfig,
 	AgentEvent,
 	AssistantMessage,
+	ContextWindowConfig,
 	Message,
 	Model,
 	Tool,
@@ -19,6 +20,7 @@ export interface AgentOptions {
 	systemPrompt?: string;
 	tools?: Tool[];
 	maxTurns?: number;
+	contextWindow?: ContextWindowConfig;
 	beforeToolCall?: (toolCall: ToolCall, args: Record<string, unknown>) => Promise<boolean>;
 	afterToolCall?: (toolCall: ToolCall, result: ToolResult) => Promise<ToolResult>;
 }
@@ -28,6 +30,7 @@ export class Agent {
 	public systemPrompt: string;
 	public tools: Tool[];
 	public maxTurns: number;
+	public contextWindow?: ContextWindowConfig;
 	public messages: Message[] = [];
 	public beforeToolCall?: AgentOptions["beforeToolCall"];
 	public afterToolCall?: AgentOptions["afterToolCall"];
@@ -44,6 +47,7 @@ export class Agent {
 		this.systemPrompt = options.systemPrompt ?? "";
 		this.tools = options.tools?.slice() ?? [];
 		this.maxTurns = options.maxTurns ?? 50;
+		this.contextWindow = options.contextWindow;
 		this.beforeToolCall = options.beforeToolCall;
 		this.afterToolCall = options.afterToolCall;
 	}
@@ -122,6 +126,7 @@ export class Agent {
 				tools: this.tools,
 				maxTurns: this.maxTurns,
 				signal: this.abortController.signal,
+				contextWindow: this.contextWindow,
 				beforeToolCall: this.beforeToolCall,
 				afterToolCall: this.afterToolCall,
 			};

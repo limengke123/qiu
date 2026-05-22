@@ -163,6 +163,12 @@ async function main(): Promise<void> {
 				}
 				break;
 
+			case "context_truncated":
+				console.log(
+					`${DIM}⚠ context trimmed: dropped ${event.droppedCount} messages (~${event.estimatedTokens} tokens remain)${RESET}`,
+				);
+				break;
+
 			case "agent_end": {
 				const assistantMsgs = event.messages.filter(
 					(m) => m.role === "assistant",

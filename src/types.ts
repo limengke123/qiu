@@ -101,7 +101,8 @@ export type AgentEvent =
 	| { type: "message_delta"; delta: string }
 	| { type: "message_end"; message: Message }
 	| { type: "tool_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-	| { type: "tool_end"; toolCallId: string; toolName: string; result: ToolResult; isError: boolean };
+	| { type: "tool_end"; toolCallId: string; toolName: string; result: ToolResult; isError: boolean }
+	| { type: "context_truncated"; droppedCount: number; estimatedTokens: number };
 
 // ── Stream events from provider ──
 
@@ -114,6 +115,22 @@ export type ProviderEvent =
 	| { type: "done"; message: AssistantMessage }
 	| { type: "error"; message: AssistantMessage };
 
+// ── Context window ──
+
+export interface ContextWindowConfig {
+	/** Maximum tokens allowed for the full context (system + messages). */
+	maxContextTokens: number;
+	/** Tokens reserved for model output. Default: 4096. */
+	reservedOutputTokens?: number;
+	/** Strategy when context overflows. Default: "truncate". */
+	strategy?: "truncate" | "summarize";
+	/**
+	 * Custom summarizer function. Required if strategy is "summarize".
+	 * Receives messages to compress, returns a summary string.
+	 */
+	summarizer?: (messages: Message[]) => Promise<string>;
+}
+
 // ── Agent config ──
 
 export interface AgentConfig {
@@ -122,6 +139,7 @@ export interface AgentConfig {
 	tools?: Tool[];
 	maxTurns?: number;
 	signal?: AbortSignal;
+	contextWindow?: ContextWindowConfig;
 	beforeToolCall?: (toolCall: ToolCall, args: Record<string, unknown>) => Promise<boolean>;
 	afterToolCall?: (toolCall: ToolCall, result: ToolResult) => Promise<ToolResult>;
 }
