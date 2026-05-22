@@ -19,7 +19,10 @@
 - **Built-in Tools** - Read files, write files, execute shell commands
 - **Event-Driven Architecture** - Comprehensive event system with TypeScript type definitions
 - **Streaming Tool Calls** - Handles partial JSON for streaming tool parameters
-- **Concise Design** - Only 11 source files with complete functionality
+- **Session Management** - Save, load, and resume conversation sessions
+- **Rich CLI UI** - Colorful banners, progress bars, markdown rendering, spinner animations
+- **Image Attachment** - Drag and drop images directly into the terminal
+- **Config Management** - User and project-level configuration with fallback chain
 
 ## 📦 Installation
 
@@ -65,11 +68,15 @@ qiu -m gpt-4o-mini -u https://api.openai.com -k sk-...
 ### Command Line Options
 
 ```
--m, --model <id>       Model ID (default: qwen2.5:7b)
--u, --base-url <url>   API base URL (default: http://localhost:11434)
--k, --api-key <key>    API key (or set QIU_API_KEY / OPENAI_API_KEY)
--s, --system <prompt>  System prompt
--h, --help             Show this help
+-m, --model <id>            Model ID (default: qwen2.5:7b)
+-u, --base-url <url>        API base URL (default: http://localhost:11434)
+-k, --api-key <key>         API key (or set QIU_API_KEY / OPENAI_API_KEY)
+-s, --system <prompt>       System prompt
+-c, --context-tokens <n>    Max context window tokens
+-r, --resume [id]           Resume last session (or specify session ID)
+--config                    Show effective configuration
+--sessions                  List saved sessions
+-h, --help                  Show this help
 ```
 
 ### Environment Variables
@@ -79,6 +86,14 @@ For OpenAI-compatible APIs:
 export QIU_API_KEY=sk-...
 export QIU_BASE_URL=https://api.openai.com
 qiu --model gpt-4o-mini
+```
+
+Other environment variables:
+```bash
+export QIU_MODEL=qwen2.5:7b
+export QIU_SYSTEM="You are a helpful coding assistant"
+export QIU_MAX_TURNS=10
+export QIU_MAX_CONTEXT_TOKENS=128000
 ```
 
 ### Advanced Examples
@@ -93,29 +108,50 @@ npm run dev -- --model Qwen3.6-35B-A3B-4bit -u http://127.0.0.1:8099
 qiu --model claude-3-haiku --system "You are a helpful coding assistant"
 ```
 
+**Resume a previous session**:
+```bash
+qiu --resume              # Resume latest session
+qiu --resume <session-id> # Resume specific session
+```
+
 ## 💻 REPL Commands
 
 - Type any message to interact with the AI agent
-- `/reset` - Clear the conversation history
+- **Drag and drop** image files directly into the terminal
+- `/reset` - Clear the conversation history (new session)
+- `/save` - Show current session info
+- `/sessions` - List saved sessions
+- `/load <id>` - Load a saved session
+- `/config` - Show effective configuration
 - `/messages` - Show the number of messages in context
+- `/help` - Show available commands
 - `Ctrl+C` - Exit the application
 
 ## 📁 Project Structure
 
 ```
 src/
-├── agent.ts           # AI Agent core logic
-├── agent-loop.ts      # Agent loop control
-├── cli.ts             # CLI interface
-├── event-stream.ts    # Event stream handling
-├── index.ts           # Main entry point
-├── provider.ts        # AI model provider
-├── tools/             # Built-in tools
+├── agent.ts              # AI Agent core logic
+├── agent-loop.ts         # Agent loop control
+├── cli.ts                # CLI interface (main entry)
+├── event-stream.ts       # Event stream handling
+├── index.ts              # Main entry point
+├── provider.ts           # AI model provider
+├── cli/                  # CLI rendering components
+│   ├── banner.ts         # Colorful welcome banner
+│   ├── markdown.ts       # Markdown rendering
+│   ├── separator.ts      # Turn separator with stats
+│   ├── spinner.ts        # Spinner animation with elapsed time
+│   ├── status-bar.ts     # Status bar (cwd, tokens, progress, session, model)
+│   ├── tool-card.ts      # Tool execution card with styled borders
+│   ├── theme.ts          # Centralized theme/styling system
+│   └── user-message.ts   # User message card
+├── tools/                # Built-in tools
 │   ├── index.ts
 │   ├── read-file.ts
 │   ├── shell.ts
 │   └── write-file.ts
-└── types.ts           # Type definitions
+└── types.ts              # Type definitions
 ```
 
 ## 🔧 Built-in Tools
@@ -130,11 +166,12 @@ src/
 
 ### Core Components
 
-1. **CLI (`cli.ts`)** - Command-line interface and parameter parsing
+1. **CLI (`cli.ts`)** - Command-line interface with rich UI (banners, progress bars, markdown)
 2. **Agent (`agent.ts`)** - Core agent logic with message management
 3. **Agent Loop (`agent-loop.ts`)** - Main execution loop with tool calling
 4. **Provider (`provider.ts`)** - API communication layer with streaming support
 5. **EventStream (`event-stream.ts`)** - Generic event stream management
+6. **CLI Components** - Rich terminal rendering (theme system, markdown, spinner, status bar, tool cards, user messages, separators, banners)
 
 ### Data Flow
 
@@ -194,6 +231,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Ollama](https://ollama.com/) for local LLM support
 - [OpenAI](https://openai.com/) API compatibility
+- [chalk](https://github.com/chalk/chalk), [figures](https://github.com/sindresorhus/figures), [gradient-string](https://github.com/sindresorhus/gradient-string), [marked](https://github.com/markedjs/marked), [marked-terminal](https://github.com/webminor/marked-terminal) for CLI rendering
 - All contributors who help make qiu better
 
 ---
