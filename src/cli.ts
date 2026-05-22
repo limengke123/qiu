@@ -18,7 +18,7 @@ import { renderBanner } from "./cli/banner.js";
 import { renderUserMessage } from "./cli/user-message.js";
 import { renderMarkdown } from "./cli/markdown.js";
 import { renderSeparator, type TurnStats } from "./cli/separator.js";
-import { handlePaste, type AttachedImage } from "./cli/paste-handler.js";
+import { handlePaste, detectImagePath, loadImageFile, type AttachedImage } from "./cli/paste-handler.js";
 import { t, SHOW_CURSOR } from "./cli/theme.js";
 import type {
 	AgentEvent,
@@ -415,6 +415,22 @@ async function main(): Promise<void> {
 				return;
 			}
 
+			// Detect image file path pasted/typed directly
+			const imagePath = detectImagePath(trimmed);
+			if (imagePath) {
+				const img = loadImageFile(imagePath);
+				if (img) {
+					pendingImages.push(img);
+					const sizeMB = (img.size / 1024 / 1024).toFixed(2);
+					console.log(
+						`  ${t.accent("📎")} ${chalk.white(img.filename)} ${t.dim(`(${img.mimeType}, ${sizeMB}MB)`)}`,
+					);
+					console.log(`  ${t.dim("Image attached. Type your message or press Enter to describe it.")}`);
+					promptUser();
+					return;
+				}
+			}
+
 			// Show user message card
 			console.log(renderUserMessage(trimmed));
 
@@ -544,7 +560,7 @@ ${t.dim("Tip: Drag image files directly into the terminal to attach them.")}`);
 		return true;
 	}
 
-	if (input.startsWith("/")) {
+	if (input.startsWith("/") && !looksLikeFilePath(input)) {
 		console.log(
 			`  ${t.error(`Unknown command: ${input.split(" ")[0]}`)} ${t.dim("(type /help)")}`,
 		);
@@ -600,6 +616,12 @@ function runConfigCommand(): void {
 }
 
 // ── Helpers ──
+
+function looksLikeFilePath(input: string): boolean {
+	// Commands are short words like /help, /save, /load xyz
+	// File paths have multiple segments: /Users/..., /home/..., /tmp/...
+	return input.includes("/", 1) || input.includes(".");
+}
 
 function truncate(s: string, max: number): string {
 	const oneLine = s.replace(/\n/g, " ");
