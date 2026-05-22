@@ -13,7 +13,7 @@ export type { ProviderStream, StreamOptions } from "./provider.js";
 export { EventStream } from "./event-stream.js";
 
 // Tools
-export { defaultTools, shellTool, readFileTool, writeFileTool } from "./tools/index.js";
+export { defaultTools, shellTool, readFileTool, writeFileTool, strReplaceTool } from "./tools/index.js";
 
 // Types
 export type {
