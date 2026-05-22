@@ -12,6 +12,10 @@ export { fitContext, estimateTokens, estimateMessageTokens } from "./context-win
 export { ConfigManager, getConfigManager } from "./config-manager.js";
 export type { UserConfig, ProjectConfig, ResolvedConfig, ConfigSources } from "./config-manager.js";
 
+// Session persistence
+export { SessionStore, getSessionStore } from "./session-store.js";
+export type { Session, SessionMeta } from "./session-store.js";
+
 // Provider
 export { streamChat } from "./provider.js";
 export type { ProviderStream, StreamOptions } from "./provider.js";

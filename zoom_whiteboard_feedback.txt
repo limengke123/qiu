@@ -1,0 +1,13 @@
+Flora Wang 18:00
+
+Performance issues of Zoom Whiteboard
+
+I'm a product designer and have been trying Zoom whiteboard for a work project in the past 3 weeks with 4 teammates. The performance is pretty unstable and has reduced productivity compared to Miro. Here are the specific issues I've had so far:
+
+• Frame resizing crashes the page: Resizing a frame triggers a full page refresh
+• Commenting experience is broken: Placing a comment often requires multiple attempts to land in the correct location. Resolved comments should be hidden but they don't disappear.
+• Clunky diagramming and sticky notes: My job requires me to draw lots of diagrams and sticky notes. Every time I add a new shape I need to re-select the font size, color, etc. I'd expect the styles to carry over from the last shape. Connectors can also be jumpy.
+• Miss wireframe toolkit: As designers, we need to quickly sketch ideas in wireframes which Miro could support. Zoom doesn't have relevant widgets at all.
+• Cursor visibility delay: It can take over 30 seconds for teammates to see my cursor position. This significantly impacts real-time collaboration, especially for a distributed team that relies on working together online.
+
+Neither Miro nor FigJam have these issues consistently. Is there a channel to share this feedback directly with the Zoom product team, or re-evaluate the migration plan?

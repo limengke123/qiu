@@ -385,16 +385,24 @@ async function main(): Promise<void> {
 /**
  * Handle slash commands. Returns true if the input was a command.
  */
-async function handleCommand(input: string, agent: Agent): Promise<boolean> {
+async function handleCommand(
+	input: string,
+	agent: Agent,
+	store: SessionStore,
+	getSessionId: () => string | null,
+	setSessionId: (id: string) => void,
+): Promise<boolean> {
 	if (input === "/reset") {
 		agent.reset();
-		console.log(`${DIM}Conversation reset.${RESET}`);
+		setSessionId(store.create(agent.model.id));
+		console.log(`${DIM}Conversation reset. New session started.${RESET}`);
 		return true;
 	}
 
 	if (input === "/messages") {
+		const sid = getSessionId();
 		console.log(
-			`${DIM}${agent.messages.length} messages in context${RESET}`,
+			`${DIM}${agent.messages.length} messages in context${sid ? ` (session: ${sid})` : ""}${RESET}`,
 		);
 		return true;
 	}
@@ -402,8 +410,11 @@ async function handleCommand(input: string, agent: Agent): Promise<boolean> {
 	if (input === "/help") {
 		console.log(`${DIM}Commands:${RESET}`);
 		console.log(`  ${BOLD}/image <path> [prompt]${RESET}  Send image with optional text`);
+		console.log(`  ${BOLD}/save${RESET}                   Show current session info`);
+		console.log(`  ${BOLD}/sessions${RESET}               List saved sessions`);
+		console.log(`  ${BOLD}/load <id>${RESET}              Load a saved session`);
 		console.log(`  ${BOLD}/config${RESET}                 Show effective configuration`);
-		console.log(`  ${BOLD}/reset${RESET}                  Clear conversation`);
+		console.log(`  ${BOLD}/reset${RESET}                  Clear and start new session`);
 		console.log(`  ${BOLD}/messages${RESET}               Show message count`);
 		console.log(`  ${BOLD}/help${RESET}                   Show this help`);
 		return true;
@@ -411,6 +422,46 @@ async function handleCommand(input: string, agent: Agent): Promise<boolean> {
 
 	if (input === "/config") {
 		runConfigCommand();
+		return true;
+	}
+
+	if (input === "/save") {
+		const sid = getSessionId();
+		if (!sid) {
+			console.log(`${DIM}No active session yet. Send a message first.${RESET}`);
+		} else {
+			const session = store.load(sid);
+			console.log(
+				`${GREEN}✓${RESET} Session ${CYAN}${sid}${RESET} "${session.meta.title}" (${session.meta.messageCount} messages)`,
+			);
+			console.log(`${DIM}  Auto-saved to: ${store.directory}/${sid}.jsonl${RESET}`);
+		}
+		return true;
+	}
+
+	if (input === "/sessions") {
+		runSessionsCommand();
+		return true;
+	}
+
+	if (input.startsWith("/load")) {
+		const targetId = input.slice(5).trim();
+		if (!targetId) {
+			console.log(`${RED}Usage: /load <session-id>${RESET}`);
+			return true;
+		}
+
+		if (!store.exists(targetId)) {
+			console.log(`${RED}Session not found: ${targetId}${RESET}`);
+			return true;
+		}
+
+		const session = store.load(targetId);
+		agent.messages = session.messages;
+		setSessionId(session.meta.id);
+		console.log(
+			`${GREEN}↺${RESET} Loaded session ${CYAN}${session.meta.id}${RESET} "${session.meta.title}" (${session.messages.length} messages)`,
+		);
 		return true;
 	}
 
@@ -458,6 +509,25 @@ async function handleCommand(input: string, agent: Agent): Promise<boolean> {
 	}
 
 	return false;
+}
+
+function runSessionsCommand(): void {
+	const store = new SessionStore();
+	const sessions = store.list(20);
+
+	if (sessions.length === 0) {
+		console.log(`${DIM}No saved sessions.${RESET}`);
+		return;
+	}
+
+	console.log(`${BOLD}Saved sessions:${RESET}\n`);
+	for (const s of sessions) {
+		const date = new Date(s.updatedAt).toLocaleString();
+		console.log(
+			`  ${CYAN}${s.id}${RESET}  ${s.title.padEnd(40)}  ${DIM}${s.model}  ${s.messageCount} msgs  ${date}${RESET}`,
+		);
+	}
+	console.log(`\n${DIM}Resume: qiu --resume <id>  or  /load <id>${RESET}`);
 }
 
 function runConfigCommand(): void {
