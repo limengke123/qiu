@@ -5,6 +5,7 @@
 
 import type {
 	AssistantMessage,
+	ContextWindowConfig,
 	Message,
 	TextContent,
 	ToolCall,
@@ -12,19 +13,7 @@ import type {
 	UserMessage,
 } from "./types.js";
 
-export interface ContextWindowConfig {
-	/** Maximum tokens allowed for the full context (system + messages). */
-	maxContextTokens: number;
-	/** Tokens reserved for model output. Default: 4096. */
-	reservedOutputTokens?: number;
-	/** Strategy when context overflows. Default: "truncate". */
-	strategy?: "truncate" | "summarize";
-	/**
-	 * Custom summarizer function. Required if strategy is "summarize".
-	 * Receives messages to compress, returns a summary string.
-	 */
-	summarizer?: (messages: Message[]) => Promise<string>;
-}
+export type { ContextWindowConfig };
 
 export interface FitResult {
 	messages: Message[];

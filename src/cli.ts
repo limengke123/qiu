@@ -17,6 +17,8 @@ import * as readline from "node:readline";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, extname } from "node:path";
 import { Agent } from "./agent.js";
+import { ConfigManager } from "./config-manager.js";
+import { SessionStore } from "./session-store.js";
 import { defaultTools } from "./tools/index.js";
 import type {
 	AgentEvent,
@@ -29,42 +31,58 @@ import type {
 
 // ── CLI arg parsing ──
 
-function parseArgs(): {
-	model: string;
-	baseUrl: string;
+interface CliArgs {
+	model?: string;
+	baseUrl?: string;
 	apiKey?: string;
 	systemPrompt?: string;
 	contextTokens?: number;
-} {
+	resume?: string | true;
+	subcommand?: "config" | "sessions";
+}
+
+function parseArgs(): CliArgs {
 	const args = process.argv.slice(2);
-	let model = "qwen2.5:7b";
-	let baseUrl = "http://localhost:11434";
-	let apiKey: string | undefined;
-	let systemPrompt: string | undefined;
-	let contextTokens: number | undefined;
+	const result: CliArgs = {};
 
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
+			case "config":
+				result.subcommand = "config";
+				break;
+			case "sessions":
+				result.subcommand = "sessions";
+				break;
 			case "--model":
 			case "-m":
-				model = args[++i] ?? model;
+				result.model = args[++i];
 				break;
 			case "--base-url":
 			case "-u":
-				baseUrl = args[++i] ?? baseUrl;
+				result.baseUrl = args[++i];
 				break;
 			case "--api-key":
 			case "-k":
-				apiKey = args[++i];
+				result.apiKey = args[++i];
 				break;
 			case "--system":
 			case "-s":
-				systemPrompt = args[++i];
+				result.systemPrompt = args[++i];
 				break;
 			case "--context-tokens":
 			case "-c":
-				contextTokens = parseInt(args[++i], 10) || undefined;
+				result.contextTokens = parseInt(args[++i], 10) || undefined;
 				break;
+			case "--resume":
+			case "-r": {
+				const next = args[i + 1];
+				if (next && !next.startsWith("-")) {
+					result.resume = args[++i];
+				} else {
+					result.resume = true;
+				}
+				break;
+			}
 			case "--help":
 			case "-h":
 				printHelp();
@@ -72,10 +90,7 @@ function parseArgs(): {
 		}
 	}
 
-	apiKey = apiKey ?? process.env.QIU_API_KEY ?? process.env.OPENAI_API_KEY;
-	baseUrl = baseUrl ?? process.env.QIU_BASE_URL;
-
-	return { model, baseUrl, apiKey, systemPrompt, contextTokens };
+	return result;
 }
 
 function printHelp(): void {
@@ -84,6 +99,8 @@ qiu - Minimal agent for local LLMs
 
 Usage:
   qiu [options]
+  qiu config                  Show effective configuration
+  qiu sessions                List saved sessions
 
 Options:
   -m, --model <id>            Model ID (default: qwen2.5:7b)
@@ -91,21 +108,24 @@ Options:
   -k, --api-key <key>         API key (or set QIU_API_KEY / OPENAI_API_KEY)
   -s, --system <prompt>       System prompt
   -c, --context-tokens <n>    Max context window tokens (enables auto-truncation)
+  -r, --resume [id]           Resume last session (or specify session ID)
   -h, --help                  Show this help
 
 REPL Commands:
   /image <path> [prompt]      Send an image with optional text
+  /save                       Save current conversation
+  /sessions                   List saved sessions
+  /load <id>                  Load a saved session
+  /config                     Show effective configuration
   /reset                      Clear conversation history
   /messages                   Show message count
   /help                       Show this help
 
 Examples:
   qiu --model qwen2.5:7b
-  qiu --model llava:13b
+  qiu --resume                Resume last conversation
+  qiu --resume abc123         Resume a specific session
   qiu -m gpt-4o-mini -u https://api.openai.com -k sk-...
-  
-  > /image ./screenshot.png What's in this image?
-  > /image /path/to/diagram.jpg Explain this architecture
 `);
 }
 
@@ -173,31 +193,87 @@ function parseImageCommand(input: string): {
 // ── Main ──
 
 async function main(): Promise<void> {
-	const config = parseArgs();
+	const cliArgs = parseArgs();
 
-	const model: Model = {
-		id: config.model,
-		baseUrl: config.baseUrl,
-		apiKey: config.apiKey,
-	};
+	// Subcommand: config
+	if (cliArgs.subcommand === "config") {
+		runConfigCommand();
+		return;
+	}
+
+	// Subcommand: sessions
+	if (cliArgs.subcommand === "sessions") {
+		runSessionsCommand();
+		return;
+	}
+
+	// Resolve config from all sources
+	const cfgManager = new ConfigManager();
+	const resolved = cfgManager.resolve({
+		model: cliArgs.model,
+		baseUrl: cliArgs.baseUrl,
+		apiKey: cliArgs.apiKey,
+		systemPrompt: cliArgs.systemPrompt,
+		maxContextTokens: cliArgs.contextTokens,
+	});
 
 	const agent = new Agent({
-		model,
-		systemPrompt:
-			config.systemPrompt ??
-			"You are a helpful coding assistant. You have access to tools for reading files, writing files, and executing shell commands. Use them when needed to help the user.",
+		model: resolved.model,
+		systemPrompt: resolved.systemPrompt,
 		tools: defaultTools(),
-		contextWindow: config.contextTokens
+		maxTurns: resolved.maxTurns,
+		contextWindow: resolved.maxContextTokens
 			? {
-					maxContextTokens: config.contextTokens,
+					maxContextTokens: resolved.maxContextTokens,
 					reservedOutputTokens: 4096,
 					strategy: "truncate",
 				}
 			: undefined,
 	});
 
+	// Session persistence
+	const store = new SessionStore();
+	let sessionId: string | null = null;
+
+	// Resume existing session
+	if (cliArgs.resume) {
+		const targetId =
+			cliArgs.resume === true ? store.latest() : cliArgs.resume;
+
+		if (targetId && store.exists(targetId)) {
+			const session = store.load(targetId);
+			agent.messages = session.messages;
+			sessionId = session.meta.id;
+			console.log(
+				`${GREEN}↺${RESET} Resumed session ${CYAN}${sessionId}${RESET} ${DIM}(${session.meta.title}, ${session.messages.length} messages)${RESET}`,
+			);
+		} else if (cliArgs.resume !== true) {
+			console.log(
+				`${RED}Session not found: ${cliArgs.resume}${RESET}`,
+			);
+			process.exit(1);
+		}
+	}
+
+	// Auto-save: subscribe to agent_end to persist new messages
+	agent.subscribe((event) => {
+		if (event.type === "agent_end" && event.messages.length > 0) {
+			if (!sessionId) {
+				sessionId = store.create(resolved.model.id);
+			}
+			store.append(sessionId, event.messages);
+		}
+	});
+
+	const configHint = cfgManager.hasProjectConfig()
+		? `${DIM}config=${cfgManager.projectPath}${RESET}`
+		: "";
+	const sessionHint = sessionId
+		? `${DIM}session=${sessionId}${RESET}`
+		: "";
+
 	console.log(
-		`${BOLD}qiu${RESET} ${DIM}v0.1.0${RESET}  model=${CYAN}${model.id}${RESET}  base=${DIM}${model.baseUrl}${RESET}`,
+		`${BOLD}qiu${RESET} ${DIM}v0.1.0${RESET}  model=${CYAN}${resolved.model.id}${RESET}  base=${DIM}${resolved.model.baseUrl}${RESET}  ${configHint}${sessionHint}`,
 	);
 	console.log(
 		`${DIM}Type your message. /help for commands. Ctrl+C to exit.${RESET}\n`,
@@ -283,7 +359,7 @@ async function main(): Promise<void> {
 			}
 
 			try {
-				const handled = await handleCommand(trimmed, agent);
+				const handled = await handleCommand(trimmed, agent, store, () => sessionId, (id) => { sessionId = id; });
 				if (!handled) {
 					await agent.prompt(trimmed);
 				}
@@ -326,9 +402,15 @@ async function handleCommand(input: string, agent: Agent): Promise<boolean> {
 	if (input === "/help") {
 		console.log(`${DIM}Commands:${RESET}`);
 		console.log(`  ${BOLD}/image <path> [prompt]${RESET}  Send image with optional text`);
+		console.log(`  ${BOLD}/config${RESET}                 Show effective configuration`);
 		console.log(`  ${BOLD}/reset${RESET}                  Clear conversation`);
 		console.log(`  ${BOLD}/messages${RESET}               Show message count`);
 		console.log(`  ${BOLD}/help${RESET}                   Show this help`);
+		return true;
+	}
+
+	if (input === "/config") {
+		runConfigCommand();
 		return true;
 	}
 
@@ -376,6 +458,34 @@ async function handleCommand(input: string, agent: Agent): Promise<boolean> {
 	}
 
 	return false;
+}
+
+function runConfigCommand(): void {
+	const mgr = new ConfigManager();
+	const resolved = mgr.resolve();
+	const src = resolved.sources;
+
+	console.log(`${BOLD}qiu config${RESET}\n`);
+	console.log(`  ${DIM}user config${RESET}     ${src.userConfigPath}${src.userConfig ? ` ${GREEN}✓${RESET}` : ""}`);
+	console.log(`  ${DIM}project config${RESET}  ${src.projectConfigPath}${src.projectConfig ? ` ${GREEN}✓${RESET}` : ""}`);
+	console.log();
+	console.log(`${BOLD}Effective:${RESET}`);
+	console.log(`  model             ${CYAN}${resolved.model.id}${RESET}`);
+	console.log(`  base-url          ${resolved.model.baseUrl}`);
+	console.log(`  api-key           ${resolved.model.apiKey ? "***" + resolved.model.apiKey.slice(-4) : DIM + "(none)" + RESET}`);
+	console.log(`  system-prompt     ${DIM}${truncate(resolved.systemPrompt, 60)}${RESET}`);
+	console.log(`  max-context       ${resolved.maxContextTokens ?? DIM + "(unlimited)" + RESET}`);
+	console.log(`  temperature       ${resolved.model.temperature ?? DIM + "(auto)" + RESET}`);
+	console.log(`  max-tokens        ${resolved.model.maxTokens ?? DIM + "(auto)" + RESET}`);
+	console.log(`  max-turns         ${resolved.maxTurns}`);
+
+	if (resolved.tools) {
+		console.log(`  tools             ${Object.entries(resolved.tools).map(([k, v]) => `${k}=${v ? "on" : "off"}`).join(", ")}`);
+	}
+
+	console.log();
+	console.log(`${DIM}Set config: create ~/.config/qiu/config.json or ./qiu.json${RESET}`);
+	console.log(`${DIM}Env vars: QIU_MODEL, QIU_BASE_URL, QIU_API_KEY, QIU_TEMPERATURE, ...${RESET}`);
 }
 
 function formatArgs(args: Record<string, unknown>): string {

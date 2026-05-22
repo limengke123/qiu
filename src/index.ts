@@ -8,6 +8,10 @@ export { runAgentLoop } from "./agent-loop.js";
 // Context window
 export { fitContext, estimateTokens, estimateMessageTokens } from "./context-window.js";
 
+// Config
+export { ConfigManager, getConfigManager } from "./config-manager.js";
+export type { UserConfig, ProjectConfig, ResolvedConfig, ConfigSources } from "./config-manager.js";
+
 // Provider
 export { streamChat } from "./provider.js";
 export type { ProviderStream, StreamOptions } from "./provider.js";
